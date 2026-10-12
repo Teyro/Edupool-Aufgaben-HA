@@ -1,0 +1,13 @@
+configuration:
+  farbe:
+    name: Aufgabenfarbe
+    description: Hex-Farbcode der Karten, die als deine Aufgaben gelten (Standard #76a5af).
+  intervall_minuten:
+    name: Abruf alle … Minuten
+    description: Wie oft das Add-on deine Aufgaben neu lädt (5–1440).
+  boards:
+    name: Boards
+    description: IDs der Boards (Zahl in der Adresse …/boards/123). Leer = alle Kanban-Boards.
+  titel_im_sensor:
+    name: Titel im Sensor
+    description: Aufgabentitel zusätzlich als Attribut des Sensors speichern. Achtung – Home Assistant speichert Sensorwerte dauerhaft in seiner Datenbank.

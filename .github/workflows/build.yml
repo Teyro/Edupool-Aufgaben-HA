@@ -1,0 +1,29 @@
+name: Add-on bauen und prüfen
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  bauen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image bauen (amd64)
+        run: docker build --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.20 -t edupool-aufgaben edupool_aufgaben
+      - name: Starten und Seite abrufen
+        run: |
+          mkdir -p daten
+          echo '{"farbe":"#76a5af","intervall_minuten":15,"boards":[],"titel_im_sensor":false}' > daten/options.json
+          docker run -d --name addon -p 8099:8099 -e NUR_INGRESS=0 -v "$PWD/daten:/data" edupool-aufgaben
+          for i in $(seq 1 20); do curl -fs http://127.0.0.1:8099/api/status && break; sleep 1; done
+          echo
+          curl -fs http://127.0.0.1:8099/ | grep -q "offene Aufgaben"
+          curl -fs http://127.0.0.1:8099/api/status | grep -q '"verbunden":false'
+          docker logs addon
+      - name: Ohne NUR_INGRESS=0 nur Ingress
+        run: |
+          docker run -d --name addon2 -p 8100:8099 -v "$PWD/daten:/data" edupool-aufgaben
+          sleep 3
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8100/api/status)
+          echo "HTTP $code"; test "$code" = "403"
