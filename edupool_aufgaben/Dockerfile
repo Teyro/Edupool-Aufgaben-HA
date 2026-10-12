@@ -6,5 +6,7 @@ RUN apk add --no-cache nodejs
 
 WORKDIR /app
 COPY app/ /app/
+COPY run.sh /run.sh
+RUN chmod a+x /run.sh
 
-CMD [ "node", "/app/server.mjs" ]
+CMD [ "/run.sh" ]
