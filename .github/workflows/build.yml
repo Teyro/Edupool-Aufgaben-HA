@@ -27,3 +27,9 @@ jobs:
           sleep 3
           code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8100/api/status)
           echo "HTTP $code"; test "$code" = "403"
+      - name: Container-Logs
+        if: always()
+        run: |
+          docker ps -a
+          echo "--- addon"; docker logs addon 2>&1 | tail -50 || true
+          echo "--- addon2"; docker logs addon2 2>&1 | tail -20 || true
