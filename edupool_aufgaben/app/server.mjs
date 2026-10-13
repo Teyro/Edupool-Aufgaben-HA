@@ -16,8 +16,9 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { IServKlient } from "./iserv.mjs";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DATEN = process.env.DATEN_ORDNER || "/data";
 const BASE = (process.env.EDUPOOL_URL || "https://boards.edupool.cloud").replace(/\/$/, "");
 const SUPERVISOR = (process.env.SUPERVISOR_URL || "http://supervisor").replace(/\/$/, "");
@@ -27,6 +28,7 @@ const PORT = Number(process.env.PORT || 8099);
 const NUR_INGRESS = process.env.NUR_INGRESS !== "0";
 const INGRESS_ADRESSE = "172.30.32.2";
 const SENSOR = "sensor.edupool_offene_aufgaben";
+const SENSOR_STOER = "sensor.iserv_offene_stoerungen";
 const ZEIT_LIMIT_MS = 30000;
 const MAX_BOARDS = 30;
 
@@ -42,7 +44,11 @@ function schreibJSON(datei, wert) {
 }
 function loesche(datei) { try { fs.unlinkSync(path.join(DATEN, datei)); } catch { /* war nicht da */ } }
 
-const optionen = Object.assign({ farbe: "#76a5af", intervall_minuten: 15, boards: [], titel_im_sensor: false }, liesJSON("options.json", {}));
+const optionen = Object.assign({
+  farbe: "#76a5af", intervall_minuten: 15, boards: [], titel_im_sensor: false,
+  iserv_aktiv: false, iserv_server: "", iserv_benutzer: "", iserv_passwort: "", iserv_2fa_schluessel: "",
+  iserv_anmeldeseiten: [], iserv_intervall_minuten: 30,
+}, liesJSON("options.json", {}));
 
 function log(...t) { console.log(new Date().toISOString().slice(0, 19).replace("T", " "), ...t); }
 
@@ -251,6 +257,66 @@ async function trennen() {
   log("Verbindung entfernt");
 }
 
+// ---------------------------------------------------------------- IServ-Störungen
+let stoerStand = null, stoerFehler = null, stoerAbruf = null, stoerCodeNoetig = false;
+let iservKlient = null;
+function neuerKlient() {
+  if (!optionen.iserv_server || !optionen.iserv_benutzer || !optionen.iserv_passwort) return null;
+  return new IServKlient({
+    server: optionen.iserv_server, benutzer: optionen.iserv_benutzer, passwort: optionen.iserv_passwort,
+    totpGeheim: optionen.iserv_2fa_schluessel, erlaubteHosts: optionen.iserv_anmeldeseiten,
+    protokoll: process.env.ISERV_PROTOKOLL || "https:", log,
+  });
+}
+
+async function stoerAbrufen(grund) {
+  if (!optionen.iserv_aktiv) return;
+  if (stoerAbruf) return stoerAbruf;
+  stoerAbruf = (async () => {
+    if (!iservKlient) iservKlient = neuerKlient();
+    if (!iservKlient) { stoerFehler = { text: "IServ ist in den Add-on-Optionen nicht eingerichtet.", nichtEingerichtet: true, ts: Date.now() }; await sensorStoerMelden(); return; }
+    try {
+      const liste = await iservKlient.stoerungen();
+      const offen = liste.filter((m) => !m.erledigt);
+      stoerStand = { ts: Date.now(), anzahl: offen.length, ohneBearbeiter: offen.filter((m) => !m.bearbeiter && m.unbesetzt).length, meldungen: liste };
+      stoerFehler = null; stoerCodeNoetig = false;
+      log(`IServ-Abruf (${grund}): ${offen.length} offene Störungen`);
+    } catch (e) {
+      stoerFehler = { text: e.message || String(e), zweiFaktor: !!e.zweiFaktor, zugangsdaten: !!e.zugangsdaten, nichtEingerichtet: !!e.nichtEingerichtet, ts: Date.now() };
+      stoerCodeNoetig = !!e.zweiFaktor && !optionen.iserv_2fa_schluessel;
+      log(`IServ-Abruf (${grund}) fehlgeschlagen: ${stoerFehler.text}`);
+    }
+    await sensorStoerMelden();
+  })().finally(() => { stoerAbruf = null; });
+  return stoerAbruf;
+}
+
+async function stoerCode(code) {
+  if (!iservKlient) iservKlient = neuerKlient();
+  if (!iservKlient) return;
+  iservKlient.handCode = String(code || "").replace(/\D/g, "");
+  await stoerAbrufen("Code eingegeben");
+}
+
+async function sensorStoerMelden() {
+  if (!SUPERVISOR_TOKEN || !optionen.iserv_aktiv) return;
+  const attribute = { friendly_name: "IServ offene Störungen", icon: "mdi:wrench-clock", unit_of_measurement: "Störungen", state_class: "measurement" };
+  let zustand = "unavailable";
+  if (stoerStand) {
+    zustand = String(stoerStand.anzahl);
+    attribute.stand = new Date(stoerStand.ts).toISOString();
+    attribute.noch_ohne_bearbeiter = stoerStand.ohneBearbeiter;
+  }
+  if (stoerFehler) attribute.fehler = stoerFehler.text;
+  try {
+    const r = await fetch(`${SUPERVISOR}/core/api/states/${SENSOR_STOER}`, {
+      method: "POST", headers: { Authorization: "Bearer " + SUPERVISOR_TOKEN, "Content-Type": "application/json" },
+      body: JSON.stringify({ state: zustand, attributes: attribute }), signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) log(`Störungs-Sensor nicht gesetzt: HTTP ${r.status}`);
+  } catch (e) { log("Störungs-Sensor nicht gesetzt: " + (e.message || e)); }
+}
+
 // ---------------------------------------------------------------- Webseite (Ingress)
 const SEITE = fs.readFileSync(new URL("./seite.html", import.meta.url), "utf8");
 
@@ -263,6 +329,11 @@ function statusJSON() {
     edupool: BASE,
     intervall: optionen.intervall_minuten,
     abrufLaeuft: !!abrufLaeuft,
+    iserv: optionen.iserv_aktiv ? {
+      aktiv: true, eingerichtet: !!neuerKlient(), server: optionen.iserv_server,
+      intervall: optionen.iserv_intervall_minuten, stand: stoerStand, fehler: stoerFehler,
+      codeNoetig: stoerCodeNoetig, abrufLaeuft: !!stoerAbruf,
+    } : { aktiv: false },
   };
 }
 
@@ -292,6 +363,8 @@ const server = http.createServer(async (req, res) => {
       if (pfad === "/api/aktualisieren") { await abrufen("von Hand"); return json(res, 200, statusJSON()); }
       if (pfad === "/api/verbinden") { await verbindenStarten(); return json(res, 200, statusJSON()); }
       if (pfad === "/api/trennen") { await trennen(); return json(res, 200, statusJSON()); }
+      if (pfad === "/api/stoerungen/aktualisieren") { await stoerAbrufen("von Hand"); return json(res, 200, statusJSON()); }
+      if (pfad === "/api/stoerungen/code") { let b = ""; await new Promise((ok) => { req.on("data", (c) => (b += c)); req.on("end", ok); }); let code = ""; try { code = JSON.parse(b || "{}").code; } catch { /* egal */ } await stoerCode(code); return json(res, 200, statusJSON()); }
     }
     json(res, 404, { fehler: "nicht gefunden" });
   } catch (e) {
@@ -304,5 +377,9 @@ server.listen(PORT, () => {
   log(`Edupool Aufgaben ${VERSION} – Seite auf Port ${PORT}, Abruf alle ${optionen.intervall_minuten} Minuten`);
   abrufen("Start");
   setInterval(() => abrufen("Zeitplan"), optionen.intervall_minuten * 60 * 1000);
+  if (optionen.iserv_aktiv) {
+    stoerAbrufen("Start");
+    setInterval(() => stoerAbrufen("Zeitplan"), Math.max(5, optionen.iserv_intervall_minuten) * 60 * 1000);
+  }
 });
 for (const s of ["SIGTERM", "SIGINT"]) process.on(s, () => { server.close(); process.exit(0); });

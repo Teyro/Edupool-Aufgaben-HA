@@ -1,7 +1,7 @@
 name: Edupool Aufgaben
-version: "1.0.0"
+version: "1.1.0"
 slug: edupool_aufgaben
-description: Deine Aufgaben aus Edupool Boards (Hamburg) – Liste in der Seitenleiste und Sensor mit der Zahl offener Aufgaben
+description: Aufgaben aus Edupool Boards und (optional) Störungsmeldungen aus IServ – Seite in der Seitenleiste und Sensoren
 url: https://github.com/Teyro/Edupool-Aufgaben-HA
 arch:
   - aarch64
@@ -11,16 +11,31 @@ init: false
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:clipboard-check-outline
-panel_title: Aufgaben
+panel_title: Schule
 homeassistant_api: true
 options:
   farbe: "#76a5af"
   intervall_minuten: 15
   boards: []
   titel_im_sensor: false
+  iserv_aktiv: false
+  iserv_server: ""
+  iserv_benutzer: ""
+  iserv_passwort: ""
+  iserv_2fa_schluessel: ""
+  iserv_anmeldeseiten: []
+  iserv_intervall_minuten: 30
 schema:
   farbe: match(^#?[0-9a-fA-F]{6}$)
   intervall_minuten: int(5,1440)
   boards:
     - int
   titel_im_sensor: bool
+  iserv_aktiv: bool
+  iserv_server: str?
+  iserv_benutzer: str?
+  iserv_passwort: password?
+  iserv_2fa_schluessel: password?
+  iserv_anmeldeseiten:
+    - str
+  iserv_intervall_minuten: int(5,1440)

@@ -7,12 +7,12 @@
 <style>
   :root {
     --bg: #f3f6f7; --karte: #ffffff; --text: #14252b; --leise: #5d6f76; --linie: #dfe7e9;
-    --akzent: #2f6f7b; --punkt: #76a5af; --kopf1: #1f444a; --kopf2: #3b7079; --warn: #b86e00; --warnbg: #fff4e0;
+    --akzent: #2f6f7b; --punkt: #76a5af; --kopf1: #1f444a; --kopf2: #3b7079; --warn: #b86e00; --warnbg: #fff4e0; --ok: #15803d; --neu: #c2410c;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #111417; --karte: #1b2127; --text: #eef2f5; --leise: #8e98a6; --linie: #2a323a;
-      --akzent: #8fc3cc; --punkt: #76a5af; --kopf1: #183a40; --kopf2: #2c5d66; --warn: #ffb547; --warnbg: #3a2c12;
+      --akzent: #8fc3cc; --punkt: #76a5af; --kopf1: #183a40; --kopf2: #2c5d66; --warn: #ffb547; --warnbg: #3a2c12; --ok: #69f0ae; --neu: #ff8a65;
     }
   }
   * { box-sizing: border-box; }
@@ -59,12 +59,28 @@
   .warte { color: var(--leise); margin-top: 12px; }
   footer { color: var(--leise); font-size: 12px; text-align: center; padding: 18px; }
   footer button { background: none; border: 0; color: var(--leise); text-decoration: underline; padding: 0 4px; }
+  .tabs { display: flex; gap: 6px; }
+  .tabs button { background: #ffffff1f; color: #cfe4e7; border: 0; border-radius: 999px; padding: 7px 16px; font-weight: 700; font-size: 14px; }
+  .tabs button.aktiv { background: #fff; color: var(--kopf1); }
+  .st { background: var(--karte); border-radius: 14px; padding: 12px 15px; margin: 10px 0; box-shadow: 0 1px 2px #0000000f; }
+  .st .kopf { display: flex; align-items: baseline; gap: 10px; }
+  .st .kopf b { font-size: clamp(16px, 3.6vw, 19px); font-weight: 650; flex: 1; }
+  .st.erl .kopf b { font-weight: 400; color: var(--leise); text-decoration: line-through; text-decoration-color: #8e98a655; }
+  .st .d { color: var(--leise); font-size: 13px; white-space: nowrap; }
+  .st .wer { font-size: 14px; margin-top: 3px; }
+  .st .wer.neu { color: var(--warn); font-weight: 600; }
+  .st .wer.arbeit { color: var(--ok, #15803d); font-weight: 600; }
+  .st .meta { color: var(--leise); font-size: 13px; margin-top: 2px; }
+  .st .text { color: var(--text); font-size: 14px; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .code-box { background: var(--karte); border-radius: 14px; padding: 18px; margin: 10px 0; max-width: 460px; }
+  .code-box input { font: 700 24px/1 ui-monospace, Menlo, monospace; letter-spacing: .3em; width: 7ch; text-align: center; padding: 10px; border-radius: 10px; border: 1px solid var(--linie); background: var(--bg); color: var(--text); }
 </style>
 </head>
 <body>
 <header>
   <div class="zahl" id="zahl">–</div>
   <div class="titel"><b id="kopfText">offene Aufgaben</b><span id="kopfUnter">Edupool Boards</span></div>
+  <div class="tabs" id="tabs" hidden></div>
   <div class="platz"></div>
   <button class="rund" id="neu" title="Jetzt aktualisieren" aria-label="Jetzt aktualisieren">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
@@ -77,35 +93,56 @@
 // Alle Texte aus Edupool kommen nur über textContent in die Seite – nie als HTML.
 const $ = (id) => document.getElementById(id);
 const el = (tag, klasse, text) => { const e = document.createElement(tag); if (klasse) e.className = klasse; if (text !== undefined) e.textContent = text; return e; };
-let letzter = null, timer = null;
+let letzter = null, timer = null, ansicht = "aufgaben";
 
 function datumKurz(ms) {
   if (!ms) return "";
   const t = new Date(ms), h = new Date();
   const tag = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const diff = Math.round((tag(h) - tag(t)) / 86400000);
-  if (diff === 0) return "heute";
+  const zeit = (t.getHours() || t.getMinutes()) ? " " + String(t.getHours()).padStart(2, "0") + ":" + String(t.getMinutes()).padStart(2, "0") : "";
+  if (diff === 0) return "heute" + zeit;
   if (diff === 1) return "gestern";
   return t.getDate() + "." + (t.getMonth() + 1) + ".";
 }
 const uhr = (ms) => new Date(ms).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 
-async function post(pfad) {
-  const r = await fetch(pfad, { method: "POST", headers: { "X-Edupool": "1" } });
+async function post(pfad, koerper) {
+  const r = await fetch(pfad, { method: "POST", headers: { "X-Edupool": "1", "Content-Type": "application/json" }, body: koerper ? JSON.stringify(koerper) : undefined });
   const d = await r.json();
   if (!r.ok) throw new Error(d.fehler || "HTTP " + r.status);
   return d;
 }
 
+function tabs(s) {
+  const t = $("tabs");
+  const hatIserv = s.iserv && s.iserv.aktiv;
+  t.hidden = !hatIserv;
+  if (!hatIserv) { ansicht = "aufgaben"; return; }
+  t.replaceChildren();
+  for (const [id, name] of [["aufgaben", "Aufgaben"], ["stoerungen", "Störungen"]]) {
+    const b = el("button", ansicht === id ? "aktiv" : "", name);
+    if (id === "stoerungen" && s.iserv.stand) b.textContent = `Störungen (${s.iserv.stand.anzahl})`;
+    b.onclick = () => { ansicht = id; zeigen(letzter); };
+    t.append(b);
+  }
+}
+
 function zeigen(s) {
   letzter = s;
+  tabs(s);
+  if (ansicht === "stoerungen") return zeigeStoerungen(s);
+  zeigeAufgaben(s);
+}
+
+function zeigeAufgaben(s) {
   const inhalt = $("inhalt");
   inhalt.replaceChildren();
   $("neu").classList.toggle("dreht", !!s.abrufLaeuft);
   $("neu").hidden = !s.verbunden;
-
   if (!s.verbunden) {
     $("zahl").textContent = "–";
+    $("kopfText").textContent = "offene Aufgaben";
     $("kopfUnter").textContent = "nicht verbunden";
     inhalt.append(verbindenAnsicht(s));
     fuss(s);
@@ -115,14 +152,9 @@ function zeigen(s) {
   $("zahl").textContent = st ? st.offen : "…";
   $("kopfText").textContent = st && st.offen === 1 ? "offene Aufgabe" : "offene Aufgaben";
   $("kopfUnter").textContent = st ? `Stand ${uhr(st.ts)} · alle ${s.intervall} Min. · ${st.boards} Board${st.boards === 1 ? "" : "s"}` : "wird geladen …";
-
   if (s.fehler) {
     const h = el("div", "hinweis", "⚠︎ " + s.fehler.text);
-    if (s.fehler.verbindung) {
-      const k = el("button", "knopf", "Neu verbinden");
-      k.onclick = () => aktion("api/verbinden");
-      h.append(k);
-    }
+    if (s.fehler.verbindung) { const k = el("button", "knopf", "Neu verbinden"); k.onclick = () => aktion("api/verbinden"); h.append(k); }
     inhalt.append(h);
     if (s.verbinden && s.verbinden.status === "wartet") inhalt.append(verbindenAnsicht(s));
   }
@@ -137,8 +169,7 @@ function zeigen(s) {
       for (const a of g.aufgaben) {
         const link = el("a", "aufgabe");
         link.href = s.edupool + "/boards/" + encodeURIComponent(a.board);
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
+        link.target = "_blank"; link.rel = "noopener noreferrer";
         const z = el("div", "zeile");
         z.append(el("span", "punkt"), el("span", "t", a.titel), el("span", "d", datumKurz(a.geaendert)));
         link.append(z);
@@ -151,6 +182,63 @@ function zeigen(s) {
     inhalt.append(spalten);
   }
   fuss(s);
+}
+
+function uebernommen(m) { return !m.erledigt && (!!m.bearbeiter || !m.unbesetzt); }
+function werText(m) {
+  if (m.erledigt) return "✓ " + (m.bearbeiter || m.status || "erledigt");
+  if (m.bearbeiter) return "🛠 " + m.bearbeiter;
+  return m.unbesetzt ? "🆕 noch niemand" : "🛠 " + (m.status || "in Arbeit");
+}
+
+function zeigeStoerungen(s) {
+  const inhalt = $("inhalt");
+  inhalt.replaceChildren();
+  const iv = s.iserv || {};
+  const st = iv.stand;
+  $("neu").classList.toggle("dreht", !!iv.abrufLaeuft);
+  $("neu").hidden = false;
+  $("zahl").textContent = st ? st.anzahl : (iv.fehler ? "!" : "…");
+  $("kopfText").textContent = st && st.anzahl === 1 ? "offene Störung" : "offene Störungen";
+  $("kopfUnter").textContent = st ? `Stand ${uhr(st.ts)} · alle ${iv.intervall} Min.${st.ohneBearbeiter ? " · " + st.ohneBearbeiter + " noch ohne Bearbeiter" : ""}` : "wird geladen …";
+
+  if (iv.codeNoetig) inhalt.append(codeAnsicht());
+  if (iv.fehler && !iv.codeNoetig) {
+    const h = el("div", "hinweis", "⚠︎ " + iv.fehler.text);
+    inhalt.append(h);
+  }
+  if (st && st.meldungen.length) {
+    for (const m of st.meldungen) {
+      const box = el("div", "st" + (m.erledigt ? " erl" : ""));
+      const kopf = el("div", "kopf");
+      kopf.append(el("b", "", m.titel), el("span", "d", datumKurz(m.datum)));
+      box.append(kopf);
+      box.append(el("div", "wer " + (m.erledigt ? "" : uebernommen(m) ? "arbeit" : "neu"), [m.autor ? "von " + m.autor : "", werText(m)].filter(Boolean).join(" · ")));
+      const meta = [m.kategorie, m.ort].filter(Boolean).join(" · ");
+      if (meta) box.append(el("div", "meta", meta));
+      if (m.inhalt) box.append(el("div", "text", m.inhalt));
+      inhalt.append(box);
+    }
+  } else if (st) {
+    inhalt.append(el("div", "leer", "✅ Keine offenen Störungen"));
+  }
+  fuss(s);
+}
+
+function codeAnsicht() {
+  const box = el("div", "code-box");
+  box.append(el("h2", "", "Zwei-Faktor-Code"));
+  box.append(el("p", "", "IServ verlangt den 6-stelligen Code aus deiner Authenticator-App. Gib ihn hier ein; danach meldet sich das Add-on allein an."));
+  const eingabe = el("input");
+  eingabe.setAttribute("inputmode", "numeric");
+  eingabe.setAttribute("maxlength", "6");
+  eingabe.placeholder = "123456";
+  const k = el("button", "knopf", "Anmelden");
+  k.style.marginLeft = "10px";
+  k.onclick = async () => { const c = eingabe.value.replace(/\D/g, ""); if (c.length >= 6) { k.disabled = true; try { zeigen(await post("api/stoerungen/code", { code: c })); } catch (e) { alert(e.message); k.disabled = false; } } };
+  const zeile = el("div"); zeile.style.marginTop = "12px"; zeile.append(eingabe, k);
+  box.append(zeile);
+  return box;
 }
 
 function verbindenAnsicht(s) {
@@ -171,14 +259,11 @@ function verbindenAnsicht(s) {
   ol.append(el("li", "", "„Freigabeseite öffnen“ – sie öffnet sich in einem neuen Tab. Mit dem Schulkonto anmelden."));
   ol.append(el("li", "", "Prüfen, dass dieser Code eingetragen ist:"));
   box.append(ol, el("div", "code", v.code));
-  const ol2 = el("ol");
-  ol2.start = 3;
+  const ol2 = el("ol"); ol2.start = 3;
   ol2.append(el("li", "", "Nur „Lesen“ anhaken, Laufzeit wählen (z. B. 90 Tage), alle Boards, bestätigen."));
   box.append(ol2);
   const link = el("a", "knopf", "Freigabeseite öffnen");
-  link.href = v.seite;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
+  link.href = v.seite; link.target = "_blank"; link.rel = "noopener noreferrer";
   box.append(link);
   const rest = Math.max(0, Math.round((v.ablauf - Date.now()) / 60000));
   box.append(el("div", "warte", `Warte auf deine Bestätigung … (Code gilt noch ${rest} Min.)`));
@@ -188,7 +273,7 @@ function verbindenAnsicht(s) {
 function fuss(s) {
   const f = $("fuss");
   f.replaceChildren(document.createTextNode(`Edupool Aufgaben ${s.version}`));
-  if (s.verbunden) {
+  if (ansicht === "aufgaben" && s.verbunden) {
     f.append(document.createTextNode(" · "));
     const t = el("button", "", "Verbindung entfernen");
     t.onclick = async () => { if (confirm("Verbindung zu Edupool Boards entfernen? Widerrufen kannst du die Freigabe zusätzlich in Edupool Boards.")) await aktion("api/trennen"); };
@@ -198,11 +283,9 @@ function fuss(s) {
 
 async function aktion(pfad) {
   try {
-    if (pfad === "api/aktualisieren") $("neu").classList.add("dreht");
+    $("neu").classList.add("dreht");
     zeigen(await post(pfad));
-  } catch (e) {
-    alert("Nicht geklappt: " + e.message);
-  }
+  } catch (e) { alert("Nicht geklappt: " + e.message); }
   planen();
 }
 
@@ -210,20 +293,20 @@ async function laden() {
   try {
     const r = await fetch("api/status", { cache: "no-store" });
     zeigen(await r.json());
-  } catch (e) {
-    $("kopfUnter").textContent = "Add-on nicht erreichbar";
-  }
+  } catch (e) { $("kopfUnter").textContent = "Add-on nicht erreichbar"; }
   planen();
 }
 function planen() {
   clearTimeout(timer);
-  // Während auf die Freigabe gewartet wird oft nachsehen, sonst jede Minute
-  const wartet = letzter && letzter.verbinden && letzter.verbinden.status === "wartet";
-  timer = setTimeout(laden, wartet || (letzter && letzter.abrufLaeuft) ? 3000 : 60000);
+  const l = letzter || {};
+  const wartet = l.verbinden && l.verbinden.status === "wartet";
+  const laeuft = (ansicht === "aufgaben" ? l.abrufLaeuft : l.iserv && l.iserv.abrufLaeuft);
+  timer = setTimeout(laden, wartet || laeuft ? 3000 : 60000);
 }
 
-$("neu").onclick = () => aktion("api/aktualisieren");
+$("neu").onclick = () => aktion(ansicht === "stoerungen" ? "api/stoerungen/aktualisieren" : "api/aktualisieren");
 laden();
+
 </script>
 </body>
 </html>

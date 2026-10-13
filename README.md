@@ -1,7 +1,7 @@
 # Edupool Aufgaben – Home-Assistant-Add-on
 
 Deine Aufgaben aus [Edupool Boards](https://boards.edupool.cloud) (Hamburg) in Home Assistant:
-eine Seite in der Seitenleiste mit den Kategorien Ideen Backlog, Zu erledigen, In Bearbeitung,
+optional auch Störungsmeldungen aus IServ. Eine Seite in der Seitenleiste mit den Kategorien Ideen Backlog, Zu erledigen, In Bearbeitung,
 Wartet auf Feedback und Erledigt sowie der Sensor `sensor.edupool_offene_aufgaben`.
 
 Installation: In Home Assistant **Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories**,

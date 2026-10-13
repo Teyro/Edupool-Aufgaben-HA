@@ -11,3 +11,24 @@ configuration:
   titel_im_sensor:
     name: Titel im Sensor
     description: Aufgabentitel zusätzlich als Attribut des Sensors speichern. Achtung – Home Assistant speichert Sensorwerte dauerhaft in seiner Datenbank.
+  iserv_aktiv:
+    name: IServ-Störungen anzeigen
+    description: Zusätzlich zur Aufgaben-Seite die Störungsmeldungen aus IServ holen (Reiter „Störungen“ und Sensor).
+  iserv_server:
+    name: IServ-Adresse
+    description: Wie im Browser, z. B. s1234.schuldock.de.
+  iserv_benutzer:
+    name: IServ-Benutzername
+    description: Dein IServ-Anmeldename (z. B. vorname.nachname).
+  iserv_passwort:
+    name: IServ-Passwort
+    description: Dein IServ-Passwort. Liegt nur in der Add-on-Konfiguration auf diesem Gerät.
+  iserv_2fa_schluessel:
+    name: 2FA-Schlüssel (optional)
+    description: Der Text unter dem QR-Code beim Einrichten der Zwei-Faktor-Anmeldung. Ohne ihn fragt die Seite bei Bedarf nach dem Code.
+  iserv_anmeldeseiten:
+    name: Weitere Anmeldeseiten
+    description: Nur falls die Anmeldung über eine andere Adresse läuft als euer IServ (z. B. auth.iam.schuldock.de). Sonst leer lassen.
+  iserv_intervall_minuten:
+    name: IServ-Abruf alle … Minuten
+    description: Wie oft die Störungsmeldungen neu geladen werden (5–1440).
